@@ -8,7 +8,7 @@ from validator import validate_awb
 if "reset_counter" not in st.session_state:
     st.session_state.reset_counter = 0
 
-st.title("Samsung SDS - AWB Validator")
+st.title("Samsung SDS - AWB Validator SDSPA")
 
 if st.button("🔄 Reset / New Batch"):
 
