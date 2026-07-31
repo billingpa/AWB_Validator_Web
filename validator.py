@@ -73,7 +73,7 @@ def extract_hawb_from_filename(filename):
     )
 
     match = re.search(
-        r'([A-Z]{3}\d{7}|[A-Z]\d{5,}|[0-9]{3}-?[0-9]{5,})',
+        r'([A-Z]{1,5}\d{5,}|[0-9]{3}-?[0-9]{5,})',
         filename.upper()
     )
 
