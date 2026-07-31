@@ -23,12 +23,48 @@ def normalize_hawb(value):
 
 
 # =====================================================
+# FIND EXCEL HEADER ROW
+# =====================================================
+
+def find_excel_header(excel_file):
+
+    df = pd.read_excel(
+        excel_file,
+        header=None,
+        nrows=10
+    )
+
+    for i in range(len(df)):
+
+        row = [
+            str(x).strip()
+            for x in df.iloc[i].tolist()
+        ]
+
+        if (
+            "HAWB" in row
+            and "CW" in row
+        ):
+
+            return i
+
+        if (
+            "AWB/ BL Nº" in row
+            and "CW" in row
+        ):
+
+            return i
+
+    raise Exception(
+        "Unable to locate Excel header row."
+    )
+
+
+# =====================================================
 # EXTRACT HAWB FROM PDF FILE NAME
 # =====================================================
 
 def extract_hawb_from_filename(filename):
-
-    # Remove [2], [3], etc.
 
     filename = re.sub(
         r'\[\d+\]',
@@ -76,19 +112,13 @@ def extract_pdf_cw(pdf_path):
 
     lines = pdf_text.split("\n")
 
-    # -------------------------------------------------
-    # METHOD 1
-    # EXISTING PROVIDER
-    # -------------------------------------------------
+    # ORIGINAL PROVIDER
 
     for line in lines:
 
         match = re.search(
-
             r'\d+\s+\d+(?:\.\d+)?K\s+[A-Z]\s+(\d+(?:\.\d+)?)\s+\d+(?:\.\d+)?',
-
             line
-
         )
 
         if match:
@@ -103,10 +133,7 @@ def extract_pdf_cw(pdf_path):
 
                 pass
 
-    # -------------------------------------------------
-    # METHOD 2
-    # NEW PROVIDER
-    # -------------------------------------------------
+    # SVC PROVIDER
 
     for line in lines:
 
@@ -136,20 +163,10 @@ def extract_pdf_cw(pdf_path):
                     pass
 
     return None
-
-
-# =====================================================
-# MAIN VALIDATION FUNCTION
-# =====================================================
-
 def validate_awb(
     input_folder,
     output_folder
 ):
-
-    # =====================================================
-    # FIND EXCEL
-    # =====================================================
 
     excel_file = None
 
@@ -170,39 +187,26 @@ def validate_awb(
             "No Excel file found."
         )
 
+    print(f"Excel found: {excel_file}")
+
+    # DETECT HEADER
+
+    header_row = find_excel_header(
+        excel_file
+    )
+
     print(
-        f"Excel found: {excel_file}"
+        f"Header detected on row: {header_row}"
     )
 
-    # =====================================================
     # READ EXCEL
-    # =====================================================
 
-    df_header0 = pd.read_excel(
+    df_excel = pd.read_excel(
         excel_file,
-        header=0
+        header=header_row
     )
 
-    df_header1 = pd.read_excel(
-        excel_file,
-        header=1
-    )
-
-    # Existing provider
-
-    if "HAWB" in df_header1.columns:
-
-        df_excel = df_header1
-
-        print(
-            "Provider detected: ORIGINAL"
-        )
-
-    # New provider
-
-    elif "AWB/ BL Nº" in df_header0.columns:
-
-        df_excel = df_header0
+    if "AWB/ BL Nº" in df_excel.columns:
 
         df_excel.rename(
             columns={
@@ -217,8 +221,20 @@ def validate_awb(
 
     else:
 
+        print(
+            "Provider detected: ORIGINAL"
+        )
+
+    if "HAWB" not in df_excel.columns:
+
         raise Exception(
-            "Unsupported Excel format."
+            "HAWB column not found."
+        )
+
+    if "CW" not in df_excel.columns:
+
+        raise Exception(
+            "CW column not found."
         )
 
     df_excel["HAWB"] = df_excel["HAWB"].apply(
@@ -230,9 +246,7 @@ def validate_awb(
         errors="coerce"
     )
 
-    # =====================================================
     # CREATE PDF INDEX
-    # =====================================================
 
     pdf_index = {}
 
@@ -254,19 +268,12 @@ def validate_awb(
 
     results = []
 
-    # =====================================================
-    # VALIDATE EVERY EXCEL AWB
-    # =====================================================
+    # VALIDATE EXCEL ROWS
 
     for _, row in df_excel.iterrows():
 
         excel_hawb = row["HAWB"]
-
         excel_cw = row["CW"]
-
-        # -------------------------------------
-        # PDF NOT FOUND
-        # -------------------------------------
 
         if excel_hawb not in pdf_index:
 
@@ -282,10 +289,6 @@ def validate_awb(
             })
 
             continue
-
-        # -------------------------------------
-        # PDF EXISTS
-        # -------------------------------------
 
         pdf_file = pdf_index[excel_hawb]
 
@@ -339,9 +342,7 @@ def validate_awb(
 
         })
 
-    # =====================================================
-    # CHECK EXTRA PDFS
-    # =====================================================
+    # EXTRA PDFS
 
     excel_hawb_set = set(
         df_excel["HAWB"]
@@ -362,9 +363,7 @@ def validate_awb(
 
             })
 
-    # =====================================================
     # SAVE RESULT
-    # =====================================================
 
     os.makedirs(
         output_folder,
