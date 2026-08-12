@@ -23,6 +23,22 @@ def normalize_hawb(value):
 
 
 # =====================================================
+# NORMALIZE EXCEL COLUMN NAME
+# =====================================================
+
+def normalize_column_name(value):
+
+    if pd.isna(value):
+        return ""
+
+    return re.sub(
+        r"\s+",
+        " ",
+        str(value).strip()
+    )
+
+
+# =====================================================
 # FIND EXCEL HEADER ROW
 # =====================================================
 
@@ -37,7 +53,7 @@ def find_excel_header(excel_file):
     for i in range(len(df)):
 
         row = [
-            str(x).strip()
+            normalize_column_name(x)
             for x in df.iloc[i].tolist()
         ]
 
@@ -112,7 +128,9 @@ def extract_pdf_cw(pdf_path):
 
     lines = pdf_text.split("\n")
 
+    # =================================================
     # ORIGINAL PROVIDER
+    # =================================================
 
     for line in lines:
 
@@ -129,11 +147,13 @@ def extract_pdf_cw(pdf_path):
                     match.group(1)
                 )
 
-            except:
+            except Exception:
 
                 pass
 
+    # =================================================
     # SVC PROVIDER
+    # =================================================
 
     for line in lines:
 
@@ -158,17 +178,27 @@ def extract_pdf_cw(pdf_path):
                         numbers[-1]
                     )
 
-                except:
+                except Exception:
 
                     pass
 
     return None
+
+
+# =====================================================
+# VALIDATE AWB
+# =====================================================
+
 def validate_awb(
     input_folder,
     output_folder
 ):
 
     excel_file = None
+
+    # =================================================
+    # FIND EXCEL FILE
+    # =================================================
 
     for file in os.listdir(input_folder):
 
@@ -187,24 +217,43 @@ def validate_awb(
             "No Excel file found."
         )
 
-    print(f"Excel found: {excel_file}")
+    print(
+        f"Excel found: {excel_file}"
+    )
 
+    # =================================================
     # DETECT HEADER
+    # =================================================
 
     header_row = find_excel_header(
         excel_file
     )
 
     print(
-        f"Header detected on row: {header_row}"
+        f"Header detected on row: {header_row + 1}"
     )
 
+    # =================================================
     # READ EXCEL
+    # =================================================
 
     df_excel = pd.read_excel(
         excel_file,
         header=header_row
     )
+
+    # =================================================
+    # NORMALIZE COLUMN NAMES
+    # =================================================
+
+    df_excel.columns = [
+        normalize_column_name(column)
+        for column in df_excel.columns
+    ]
+
+    # =================================================
+    # DETECT PROVIDER
+    # =================================================
 
     if "AWB/ BL Nº" in df_excel.columns:
 
@@ -225,6 +274,10 @@ def validate_awb(
             "Provider detected: ORIGINAL"
         )
 
+    # =================================================
+    # VALIDATE REQUIRED COLUMNS
+    # =================================================
+
     if "HAWB" not in df_excel.columns:
 
         raise Exception(
@@ -237,6 +290,10 @@ def validate_awb(
             "CW column not found."
         )
 
+    # =================================================
+    # NORMALIZE DATA
+    # =================================================
+
     df_excel["HAWB"] = df_excel["HAWB"].apply(
         normalize_hawb
     )
@@ -246,7 +303,9 @@ def validate_awb(
         errors="coerce"
     )
 
+    # =================================================
     # CREATE PDF INDEX
+    # =================================================
 
     pdf_index = {}
 
@@ -266,14 +325,20 @@ def validate_awb(
         f"PDFs found: {len(pdf_index)}"
     )
 
-    results = []
-
+    # =================================================
     # VALIDATE EXCEL ROWS
+    # =================================================
+
+    results = []
 
     for _, row in df_excel.iterrows():
 
         excel_hawb = row["HAWB"]
         excel_cw = row["CW"]
+
+        # =================================================
+        # PDF NOT FOUND
+        # =================================================
 
         if excel_hawb not in pdf_index:
 
@@ -290,12 +355,20 @@ def validate_awb(
 
             continue
 
+        # =================================================
+        # FIND PDF
+        # =================================================
+
         pdf_file = pdf_index[excel_hawb]
 
         pdf_path = os.path.join(
             input_folder,
             pdf_file
         )
+
+        # =================================================
+        # EXTRACT PDF CW
+        # =================================================
 
         pdf_cw = extract_pdf_cw(
             pdf_path
@@ -316,12 +389,20 @@ def validate_awb(
 
             continue
 
+        # =================================================
+        # CALCULATE DIFFERENCE
+        # =================================================
+
         difference = round(
             abs(
                 float(excel_cw) - pdf_cw
             ),
             2
         )
+
+        # =================================================
+        # VALIDATION RESULT
+        # =================================================
 
         if difference <= 0.01:
 
@@ -330,6 +411,10 @@ def validate_awb(
         else:
 
             result = "FAIL"
+
+        # =================================================
+        # ADD RESULT
+        # =================================================
 
         results.append({
 
@@ -342,7 +427,9 @@ def validate_awb(
 
         })
 
+    # =================================================
     # EXTRA PDFS
+    # =================================================
 
     excel_hawb_set = set(
         df_excel["HAWB"]
@@ -363,7 +450,9 @@ def validate_awb(
 
             })
 
+    # =================================================
     # SAVE RESULT
+    # =================================================
 
     os.makedirs(
         output_folder,
