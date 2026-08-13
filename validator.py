@@ -5,7 +5,7 @@ import re
 
 
 # ============================================================
-# TEXT NORMALIZATION
+# BASIC TEXT CLEANING
 # ============================================================
 
 def clean_text(value):
@@ -39,14 +39,13 @@ def clean_text(value):
 
 
 # ============================================================
-# NORMALIZE HEADER
+# NORMALIZE COLUMN NAME
 # ============================================================
 
-def normalize_header(value):
+def normalize_column(value):
 
     text = clean_text(value).upper()
 
-    # Remove accents / special characters
     replacements = {
         "Á": "A",
         "É": "E",
@@ -62,12 +61,8 @@ def normalize_header(value):
     for old, new in replacements.items():
         text = text.replace(old, new)
 
-    # Remove spaces
+    # Remove all spaces
     text = re.sub(r"\s+", "", text)
-
-    # Remove punctuation except slash
-    text = text.replace("_", "")
-    text = text.replace("-", "")
 
     return text
 
@@ -85,9 +80,10 @@ def normalize_hawb(value):
         return ""
 
     try:
-        result = pd.isna(value)
 
-        if isinstance(result, bool) and result:
+        missing = pd.isna(value)
+
+        if isinstance(missing, bool) and missing:
             return ""
 
     except Exception:
@@ -95,7 +91,7 @@ def normalize_hawb(value):
 
     text = str(value)
 
-    text = (
+    return (
         text
         .strip()
         .upper()
@@ -105,16 +101,14 @@ def normalize_hawb(value):
         .replace("_", "")
     )
 
-    return text
-
 
 # ============================================================
-# IDENTIFY AWB HEADER
+# IDENTIFY AWB COLUMN
 # ============================================================
 
-def is_awb_header(value):
+def is_awb_column(column):
 
-    h = normalize_header(value)
+    value = normalize_column(column)
 
     possible = {
         "AWB",
@@ -128,133 +122,34 @@ def is_awb_header(value):
         "AWBHBLNO",
     }
 
-    if h in possible:
+    if value in possible:
         return True
 
-    # Flexible checks
-    if h.startswith("AWB") and (
-        "NO" in h
-        or "BL" in h
-        or "HBL" in h
-    ):
-        return True
+    # Flexible cases
+    if value.startswith("AWB"):
 
-    if h.startswith("HAWB"):
+        if (
+            "BL" in value
+            or "HBL" in value
+            or "NO" in value
+        ):
+            return True
+
+    if value.startswith("HAWB"):
         return True
 
     return False
 
 
 # ============================================================
-# IDENTIFY CW HEADER
+# IDENTIFY CW COLUMN
 # ============================================================
 
-def is_cw_header(value):
+def is_cw_column(column):
 
-    h = normalize_header(value)
+    value = normalize_column(column)
 
-    return h == "CW"
-
-
-# ============================================================
-# FIND EXCEL HEADER
-# ============================================================
-
-def find_excel_header(excel_file):
-
-    # Read WITHOUT assuming any header
-    raw = pd.read_excel(
-        excel_file,
-        header=None,
-        nrows=30
-    )
-
-    diagnostics = []
-
-    for row_number in range(len(raw)):
-
-        values = raw.iloc[row_number].tolist()
-
-        cleaned = [
-            clean_text(x)
-            for x in values
-        ]
-
-        normalized = [
-            normalize_header(x)
-            for x in cleaned
-        ]
-
-        awb_positions = [
-            i + 1
-            for i, value in enumerate(cleaned)
-            if is_awb_header(value)
-        ]
-
-        cw_positions = [
-            i + 1
-            for i, value in enumerate(cleaned)
-            if is_cw_header(value)
-        ]
-
-        # Store diagnostic information
-        diagnostics.append(
-            f"Excel row {row_number + 1}: "
-            f"AWB={awb_positions}, "
-            f"CW={cw_positions}"
-        )
-
-        # The ideal header contains both
-        if awb_positions and cw_positions:
-
-            print(
-                f"HEADER FOUND: Excel row {row_number + 1}"
-            )
-
-            return row_number
-
-    # ========================================================
-    # HEADER NOT FOUND
-    # ========================================================
-
-    diagnostic_text = "\n".join(
-        diagnostics
-    )
-
-    raise Exception(
-        "Unable to locate Excel header row.\n\n"
-        "The application searched the first 30 rows.\n\n"
-        "Detection results:\n"
-        + diagnostic_text
-    )
-
-
-# ============================================================
-# FIND AWB COLUMN
-# ============================================================
-
-def find_awb_column(columns):
-
-    for column in columns:
-
-        if is_awb_header(column):
-            return column
-
-    return None
-
-
-# ============================================================
-# FIND CW COLUMN
-# ============================================================
-
-def find_cw_column(columns):
-
-    for column in columns:
-
-        if is_cw_header(column):
-            return column
-
-    return None
+    return value == "CW"
 
 
 # ============================================================
@@ -265,6 +160,7 @@ def extract_hawb_from_filename(filename):
 
     filename = clean_text(filename).upper()
 
+    # Remove things like [1], [2], etc.
     filename = re.sub(
         r"\[\d+\]",
         "",
@@ -273,21 +169,17 @@ def extract_hawb_from_filename(filename):
 
     patterns = [
 
-        # Example:
         # PTY0045653
         # I879513
         # J158916
         r"\b([A-Z]{1,5}\d{5,})\b",
 
-        # Example:
         # 992-10748500
         # 406-06772010
         r"\b(\d{3}-\d{5,})\b",
 
-        # Example:
         # 99210748500
         r"\b(\d{8,})\b",
-
     ]
 
     for pattern in patterns:
@@ -312,7 +204,7 @@ def extract_hawb_from_filename(filename):
 
 def extract_pdf_cw(pdf_path):
 
-    text = ""
+    pdf_text = ""
 
     try:
 
@@ -320,16 +212,17 @@ def extract_pdf_cw(pdf_path):
 
             for page in pdf.pages:
 
-                page_text = page.extract_text()
+                text = page.extract_text()
 
-                if page_text:
-                    text += page_text + "\n"
+                if text:
+
+                    pdf_text += text + "\n"
 
     except Exception:
 
         return None
 
-    lines = text.splitlines()
+    lines = pdf_text.split("\n")
 
     # --------------------------------------------------------
     # ORIGINAL PROVIDER
@@ -346,7 +239,11 @@ def extract_pdf_cw(pdf_path):
         if match:
 
             try:
-                return float(match.group(1))
+
+                return float(
+                    match.group(1)
+                )
+
             except Exception:
                 pass
 
@@ -356,12 +253,12 @@ def extract_pdf_cw(pdf_path):
 
     for line in lines:
 
-        upper = line.upper()
+        upper_line = line.upper()
 
         if (
-            "CHARGEABLE WEIGHT" in upper
-            or "CHARGEABLE" in upper
-            or "CWT" in upper
+            "CHARGEABLE WEIGHT" in upper_line
+            or "CHARGEABLE" in upper_line
+            or "CWT" in upper_line
         ):
 
             numbers = re.findall(
@@ -372,7 +269,11 @@ def extract_pdf_cw(pdf_path):
             if numbers:
 
                 try:
-                    return float(numbers[-1])
+
+                    return float(
+                        numbers[-1]
+                    )
+
                 except Exception:
                     pass
 
@@ -380,23 +281,10 @@ def extract_pdf_cw(pdf_path):
 
 
 # ============================================================
-# VALIDATE AWB
+# FIND EXCEL FILE
 # ============================================================
 
-def validate_awb(
-    input_folder,
-    output_folder
-):
-
-    print("================================")
-    print("AWB VALIDATOR START")
-    print("================================")
-
-    # ========================================================
-    # FIND EXCEL
-    # ========================================================
-
-    excel_file = None
+def find_excel_file(input_folder):
 
     for file in os.listdir(input_folder):
 
@@ -406,12 +294,89 @@ def validate_awb(
         if file.lower() == "awb_validation_result.xlsx":
             continue
 
-        excel_file = os.path.join(
+        return os.path.join(
             input_folder,
             file
         )
 
-        break
+    return None
+
+
+# ============================================================
+# READ EXCEL
+#
+# IMPORTANT:
+# The test file has the header on Excel row 2.
+#
+# pandas uses zero-based indexing:
+# Excel row 2 = header=1
+# ============================================================
+
+def read_excel_file(excel_file):
+
+    HEADER_ROW = 1
+
+    df = pd.read_excel(
+        excel_file,
+        header=HEADER_ROW
+    )
+
+    # Clean all column names
+    df.columns = [
+        clean_text(column)
+        for column in df.columns
+    ]
+
+    return df
+
+
+# ============================================================
+# FIND COLUMN
+# ============================================================
+
+def find_awb_column(columns):
+
+    for column in columns:
+
+        if is_awb_column(column):
+
+            return column
+
+    return None
+
+
+def find_cw_column(columns):
+
+    for column in columns:
+
+        if is_cw_column(column):
+
+            return column
+
+    return None
+
+
+# ============================================================
+# VALIDATE
+# ============================================================
+
+def validate_awb(
+    input_folder,
+    output_folder
+):
+
+    print("")
+    print("======================================")
+    print("STARTING AWB VALIDATOR")
+    print("======================================")
+
+    # ========================================================
+    # FIND EXCEL
+    # ========================================================
+
+    excel_file = find_excel_file(
+        input_folder
+    )
 
     if excel_file is None:
 
@@ -420,53 +385,32 @@ def validate_awb(
         )
 
     print(
-        "Excel:",
+        "Excel file:",
         excel_file
-    )
-
-    # ========================================================
-    # FIND HEADER
-    # ========================================================
-
-    header_row = find_excel_header(
-        excel_file
-    )
-
-    print(
-        "Header row:",
-        header_row + 1
     )
 
     # ========================================================
     # READ EXCEL
     # ========================================================
 
-    df = pd.read_excel(
-        excel_file,
-        header=header_row
+    df = read_excel_file(
+        excel_file
     )
 
-    # Clean column names
-    df.columns = [
-        clean_text(column)
-        for column in df.columns
-    ]
-
     print("")
-    print("COLUMNS:")
-    print("--------------------------------")
+    print("COLUMNS DETECTED:")
+    print("--------------------------------------")
 
-    for i, column in enumerate(
+    for number, column in enumerate(
         df.columns,
         start=1
     ):
 
         print(
-            i,
-            repr(column)
+            f"{number}: {repr(column)}"
         )
 
-    print("--------------------------------")
+    print("--------------------------------------")
 
     # ========================================================
     # FIND AWB
@@ -478,20 +422,26 @@ def validate_awb(
 
     if awb_column is None:
 
-        raise Exception(
-            "AWB column was not found after reading "
-            "the detected header row.\n\n"
-            "Columns detected:\n\n"
-            + "\n".join(
-                [
-                    f"{i}: {repr(x)}"
-                    for i, x in enumerate(
-                        df.columns,
-                        start=1
-                    )
-                ]
-            )
+        detected_columns = "\n".join(
+            [
+                f"{i}: {repr(column)}"
+                for i, column in enumerate(
+                    df.columns,
+                    start=1
+                )
+            ]
         )
+
+        raise Exception(
+            "AWB column could not be identified.\n\n"
+            "Columns read from Excel:\n\n"
+            + detected_columns
+        )
+
+    print(
+        "AWB column:",
+        repr(awb_column)
+    )
 
     # ========================================================
     # FIND CW
@@ -503,25 +453,21 @@ def validate_awb(
 
     if cw_column is None:
 
-        raise Exception(
-            "CW column was not found after reading "
-            "the detected header row.\n\n"
-            "Columns detected:\n\n"
-            + "\n".join(
-                [
-                    f"{i}: {repr(x)}"
-                    for i, x in enumerate(
-                        df.columns,
-                        start=1
-                    )
-                ]
-            )
+        detected_columns = "\n".join(
+            [
+                f"{i}: {repr(column)}"
+                for i, column in enumerate(
+                    df.columns,
+                    start=1
+                )
+            ]
         )
 
-    print(
-        "AWB column:",
-        repr(awb_column)
-    )
+        raise Exception(
+            "CW column could not be identified.\n\n"
+            "Columns read from Excel:\n\n"
+            + detected_columns
+        )
 
     print(
         "CW column:",
@@ -529,35 +475,45 @@ def validate_awb(
     )
 
     # ========================================================
-    # STANDARDIZE
+    # STANDARDIZE DATA
     # ========================================================
 
-    df["HAWB"] = df[
+    df["VALIDATOR_HAWB"] = df[
         awb_column
     ].apply(
         normalize_hawb
     )
 
-    df["CW"] = pd.to_numeric(
+    df["VALIDATOR_CW"] = pd.to_numeric(
         df[cw_column],
         errors="coerce"
     )
 
-    # Remove empty rows
+    # Remove empty AWB rows
     df = df[
-        df["HAWB"] != ""
+        df["VALIDATOR_HAWB"] != ""
     ].copy()
 
+    print("")
+    print(
+        "Excel records:",
+        len(df)
+    )
+
     # ========================================================
-    # PDF INDEX
+    # CREATE PDF INDEX
     # ========================================================
 
     pdf_index = {}
+
+    pdf_count = 0
 
     for file in os.listdir(input_folder):
 
         if not file.lower().endswith(".pdf"):
             continue
+
+        pdf_count += 1
 
         hawb = extract_hawb_from_filename(
             file
@@ -568,30 +524,40 @@ def validate_awb(
             pdf_index[hawb] = file
 
     print(
-        "PDFs:",
+        "PDF files:",
+        pdf_count
+    )
+
+    print(
+        "PDFs identified:",
         len(pdf_index)
     )
 
     # ========================================================
-    # VALIDATE
+    # VALIDATE EXCEL RECORDS
     # ========================================================
 
     results = []
 
     for _, row in df.iterrows():
 
-        hawb = normalize_hawb(
-            row["HAWB"]
-        )
+        excel_hawb = row[
+            "VALIDATOR_HAWB"
+        ]
 
-        excel_cw = row["CW"]
+        excel_cw = row[
+            "VALIDATOR_CW"
+        ]
 
-        # PDF not found
-        if hawb not in pdf_index:
+        # ----------------------------------------------------
+        # PDF NOT FOUND
+        # ----------------------------------------------------
+
+        if excel_hawb not in pdf_index:
 
             results.append({
 
-                "HAWB": hawb,
+                "HAWB": excel_hawb,
                 "Excel CW": excel_cw,
                 "PDF CW": "",
                 "Difference": "",
@@ -602,8 +568,12 @@ def validate_awb(
 
             continue
 
+        # ----------------------------------------------------
+        # PDF FOUND
+        # ----------------------------------------------------
+
         pdf_file = pdf_index[
-            hawb
+            excel_hawb
         ]
 
         pdf_path = os.path.join(
@@ -615,12 +585,15 @@ def validate_awb(
             pdf_path
         )
 
-        # CW not found
+        # ----------------------------------------------------
+        # PDF CW NOT FOUND
+        # ----------------------------------------------------
+
         if pdf_cw is None:
 
             results.append({
 
-                "HAWB": hawb,
+                "HAWB": excel_hawb,
                 "Excel CW": excel_cw,
                 "PDF CW": "",
                 "Difference": "",
@@ -631,12 +604,15 @@ def validate_awb(
 
             continue
 
-        # Excel CW missing
+        # ----------------------------------------------------
+        # EXCEL CW NOT FOUND
+        # ----------------------------------------------------
+
         if pd.isna(excel_cw):
 
             results.append({
 
-                "HAWB": hawb,
+                "HAWB": excel_hawb,
                 "Excel CW": "",
                 "PDF CW": pdf_cw,
                 "Difference": "",
@@ -647,7 +623,10 @@ def validate_awb(
 
             continue
 
-        # Difference
+        # ----------------------------------------------------
+        # DIFFERENCE
+        # ----------------------------------------------------
+
         difference = round(
             abs(
                 float(excel_cw)
@@ -667,7 +646,7 @@ def validate_awb(
 
         results.append({
 
-            "HAWB": hawb,
+            "HAWB": excel_hawb,
             "Excel CW": excel_cw,
             "PDF CW": pdf_cw,
             "Difference": difference,
@@ -680,13 +659,13 @@ def validate_awb(
     # PDFS NOT IN EXCEL
     # ========================================================
 
-    excel_hawbs = set(
-        df["HAWB"]
+    excel_hawb_set = set(
+        df["VALIDATOR_HAWB"]
     )
 
     for pdf_hawb, pdf_file in pdf_index.items():
 
-        if pdf_hawb not in excel_hawbs:
+        if pdf_hawb not in excel_hawb_set:
 
             results.append({
 
@@ -700,7 +679,7 @@ def validate_awb(
             })
 
     # ========================================================
-    # SAVE
+    # CREATE OUTPUT
     # ========================================================
 
     os.makedirs(
@@ -722,11 +701,48 @@ def validate_awb(
         index=False
     )
 
+    # ========================================================
+    # FINISHED
+    # ========================================================
+
     print("")
-    print("================================")
-    print("VALIDATION FINISHED")
-    print("Output:")
-    print(output_file)
-    print("================================")
+    print("======================================")
+    print("VALIDATION COMPLETED")
+    print("======================================")
+
+    print(
+        "Output:",
+        output_file
+    )
+
+    print(
+        "Total results:",
+        len(result_df)
+    )
+
+    if not result_df.empty:
+
+        print(
+            "PASS:",
+            (
+                result_df["Result"] == "PASS"
+            ).sum()
+        )
+
+        print(
+            "FAIL:",
+            (
+                result_df["Result"] == "FAIL"
+            ).sum()
+        )
+
+        print(
+            "PDF NOT FOUND:",
+            (
+                result_df["Result"] == "PDF NOT FOUND"
+            ).sum()
+        )
+
+    print("======================================")
 
     return output_file
